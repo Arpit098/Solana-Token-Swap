@@ -6,9 +6,9 @@ import { Input } from "./Input"
 import { ChevronsUpDownIcon } from "./ui/icons"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { program } from "../../anchor/setup";
-import anchor from "@project-serum/anchor";
+import * as anchor from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-
+import BN from "bn.js";
 export default function SwapInterface() {
     const { publicKey, sendTransaction } = useWallet();
     const { connection } = useConnection();
