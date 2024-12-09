@@ -1,13 +1,13 @@
 'use client'
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "./ui/button"
 import { Card } from "./ui/card"
 import { Input } from "./Input"
 import { ChevronsUpDownIcon } from "./ui/icons"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { program } from "../../anchor/setup";
+import { program, programId } from "../../anchor/setup";
 import * as anchor from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import BN from "bn.js";
 export default function SwapInterface() {
     const { publicKey, sendTransaction } = useWallet();
@@ -18,65 +18,178 @@ export default function SwapInterface() {
     const [amount1, setAmount1] = useState("")
     const [tokenAddress2, setTokenAddress2] = useState("")
     const [amount2, setAmount2] = useState("")
-
-   
-    const handleSwap = async () => {
-        if (!publicKey) return;
-      console.log("started")
-        setIsLoading(true);
-      
-        const tokenMintA = new anchor.web3.PublicKey(tokenAddress1);
-        const tokenMintB = new anchor.web3.PublicKey(tokenAddress2);
-        const id = Math.floor(Math.random() * 1000000); // Random ID for the offer
-      
+    
+    useEffect(() => {
+      const fetchOffers = async () => {
+        if (!connection) {
+          console.log("Connection not ready");
+          return;
+        }
+    
         try {
-          // Derive the PDA for the offer account
-          const [offerPDA, offerBump] = PublicKey.createProgramAddressSync(
-            [Buffer.from("offer"), publicKey.toBuffer(), new BN(id).toArrayLike(Buffer, "le", 8)],
-            program.programId
-          );
-      
-          // Get the associated token account for the maker (token_mint_a)
-          const makerTokenAccountA = await anchor.utils.token.associatedAddress({
-            mint: tokenMintA,
-            owner: publicKey,
-          });
-      
-          // Derive the vault account for the offer
-          const vault = await anchor.utils.token.associatedAddress({
-            mint: tokenMintA,
-            owner: offerPDA,
-          });
-      
-          // Build the transaction
-          const transaction = await program.methods
-            .makeOffer(id, amount1, amount2) // Pass the random ID and amounts
-            .accounts({
-              maker: publicKey,
-              tokenMintA,
-              tokenMintB,
-              makerTokenAccountA,
-              offer: offerPDA,
-              vault,
-              systemProgram: anchor.web3.SystemProgram.programId,
-              tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
-              associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-            })
-            .transaction();
-      
-          // Send the transaction
-          const transactionSignature = await sendTransaction(transaction, connection);
-      
-          console.log(
-            `View on explorer: https://solana.fm/tx/${transactionSignature}?cluster=devnet-alpha`
-          );
-        } catch (error) {
-          console.error("Error during transaction:", error);
-        } finally {
-          setIsLoading(false);
+          // Fetch all accounts owned by the program
+          const accounts = await connection.getProgramAccounts(programId);
+           
+          console.log("Raw Accounts Found:", accounts);
+    
+          // If you have the IDL, use this method
+          const fetchedOffers = accounts.map((account) => {
+            try {
+              // Basic manual parsing based on your Rust struct
+              // Adjust the byte offsets and parsing logic based on your exact Offer struct
+              const data = account.account.data;
+              
+              return {
+                pubkey: account.pubkey.toString(),
+                id: new BN(data.slice(8, 16), 'le'), // Assuming first 8 bytes are discriminator
+                maker: new PublicKey(data.slice(16, 48)),
+                tokenMintA: new PublicKey(data.slice(48, 80)),
+                tokenMintB: new PublicKey(data.slice(80, 112)),
+                tokenBWanted: new BN(data.slice(112, 120), 'le'),
+                bump: data[120]
+              };
+            } catch (decodeError) {
+              console.error("Decoding error for account:", account.pubkey.toString(), decodeError);
+              return null;
+            }
+          }).filter(offer => offer !== null);
+    
+          console.log("Fetched Offers:", fetchedOffers);
+          setOffers(fetchedOffers);
+        } catch (err) {
+          console.error("Error fetching offers:", err);
         }
       };
-      
+    
+      fetchOffers();
+    }, [connection, programId]);
+   
+    const handleSwap = async () => {
+      if (!publicKey) {
+        console.error("Wallet not connected");
+        return;
+      }
+    
+      setIsLoading(true);
+    
+      try {
+        // Validate input fields
+        if (!tokenAddress1 || !tokenAddress2) {
+          throw new Error("Please enter token addresses for both tokens");
+        }
+    
+        // Validate token addresses
+        let tokenMintA, tokenMintB;
+        try {
+          tokenMintA = new PublicKey(tokenAddress1);
+          tokenMintB = new PublicKey(tokenAddress2);
+        } catch (addressError) {
+          throw new Error(`Invalid token address: ${addressError.message}`);
+        }
+    
+        // Generate a random ID
+        const id = new BN(Math.floor(Math.random() * 1000000));
+    
+        // Convert the id to little-endian bytes
+        const idBytes = id.toArrayLike(Buffer, "le", 8);
+    
+        // Validate amounts
+        if (!amount1 || !amount2) {
+          throw new Error("Please enter amounts for both tokens");
+        }
+    
+        if (isNaN(Number(amount1)) || isNaN(Number(amount2))) {
+          throw new Error("Invalid input: amount1 or amount2 is not a number.");
+        }
+    
+        const scaledAmount1 = new BN(Number(amount1) * (10 ** 9));
+        const scaledAmount2 = new BN(Number(amount2) * (10 ** 9));
+    
+        // Derive the PDA for the offer account
+        const [offerPDA] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("offer"), 
+            publicKey.toBuffer(), 
+            idBytes
+          ],
+          program.programId
+        );
+    
+        // Get the associated token account for the maker (token_mint_a)
+        const makerTokenAccountA = await anchor.utils.token.associatedAddress({
+          mint: tokenMintA,
+          owner: publicKey,
+        });
+    
+        // Derive the vault account for the offer
+        const vault = await anchor.utils.token.associatedAddress({
+          mint: tokenMintA,
+          owner: offerPDA,
+        });
+    
+        console.log("Transaction Preparation Details:", {
+          maker: publicKey.toBase58(),
+          tokenMintA: tokenMintA.toBase58(),
+          tokenMintB: tokenMintB.toBase58(),
+          makerTokenAccountA: makerTokenAccountA.toBase58(),
+          offerPDA: offerPDA.toBase58(),
+          vault: vault.toBase58(),
+          id: id.toString(),
+          scaledAmount1: scaledAmount1.toString(),
+          scaledAmount2: scaledAmount2.toString()
+        });
+    
+        // Prepare transaction
+        const transaction = await program.methods
+          .makeOffer(id, scaledAmount1, scaledAmount2)
+          .accounts({
+            maker: publicKey,
+            tokenMintA,
+            tokenMintB,
+            makerTokenAccountA,
+            offer: offerPDA,
+            vault,
+            systemProgram: SystemProgram.programId,
+            tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+            associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          })
+          .transaction();
+    
+        // Additional transaction preparation
+        transaction.feePayer = publicKey;
+        transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    
+        console.log("Transaction prepared:", transaction);
+    
+        // Send the transaction
+        const signature = await sendTransaction(transaction, connection);
+    
+        console.log("Transaction sent. Signature:", signature);
+    
+        const confirmation = await connection.confirmTransaction({
+          signature, 
+          ...(await connection.getLatestBlockhash())
+        });
+    
+        if (confirmation.value.err) {
+          throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        }
+    
+        alert("Swap successful!");
+      } catch (error) {
+        console.error("Swap Error Details:", error);
+        
+        let errorMessage = "An unexpected error occurred";
+        if (error instanceof Error) {
+          errorMessage = error.message;
+        }
+        
+        alert(`Transaction failed: ${errorMessage}`);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
  
     return (
       <div className="min-h-screen w-full bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white relative overflow-hidden">
