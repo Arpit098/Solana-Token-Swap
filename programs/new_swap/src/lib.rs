@@ -7,7 +7,7 @@ use anchor_spl::{
     },
 };
 
-declare_id!("BZfoyQyAiyo6EVAEnrxBWPgjruRo8Zi3xXduRcq1HbLo");
+declare_id!("F1r79aupgZuTSQ8WNqyJA2LrLhqgF9FNUEgZLcXyP9NE");
 
 #[program]
 pub mod dex {
@@ -35,6 +35,7 @@ pub mod dex {
             maker: ctx.accounts.maker.key(),
             token_mint_a: ctx.accounts.token_mint_a.key(),
             token_mint_b: ctx.accounts.token_mint_b.key(),
+            token_a_offered,
             token_b_wanted,
             bump: ctx.bumps.offer,
         });
@@ -92,6 +93,8 @@ pub mod dex {
 
         close_account(cpi_context)
     }
+
+   
 }
 
 fn transfer_tokens<'info>(
@@ -120,6 +123,7 @@ pub struct Offer {
     pub maker: Pubkey,
     pub token_mint_a: Pubkey,
     pub token_mint_b: Pubkey,
+    pub token_a_offered: u64,
     pub token_b_wanted: u64,
     pub bump: u8,
 }

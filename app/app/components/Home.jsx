@@ -8,7 +8,9 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { program, programId } from "../../anchor/setup";
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
+import AvailableOffers from "./Offers"
 import BN from "bn.js";
+
 export default function SwapInterface() {
     const { publicKey, sendTransaction } = useWallet();
     const { connection } = useConnection();
@@ -19,51 +21,7 @@ export default function SwapInterface() {
     const [tokenAddress2, setTokenAddress2] = useState("")
     const [amount2, setAmount2] = useState("")
     
-    useEffect(() => {
-      const fetchOffers = async () => {
-        if (!connection) {
-          console.log("Connection not ready");
-          return;
-        }
     
-        try {
-          // Fetch all accounts owned by the program
-          const accounts = await connection.getProgramAccounts(programId);
-           
-          console.log("Raw Accounts Found:", accounts);
-    
-          // If you have the IDL, use this method
-          const fetchedOffers = accounts.map((account) => {
-            try {
-              // Basic manual parsing based on your Rust struct
-              // Adjust the byte offsets and parsing logic based on your exact Offer struct
-              const data = account.account.data;
-              
-              return {
-                pubkey: account.pubkey.toString(),
-                id: new BN(data.slice(8, 16), 'le'), // Assuming first 8 bytes are discriminator
-                maker: new PublicKey(data.slice(16, 48)),
-                tokenMintA: new PublicKey(data.slice(48, 80)),
-                tokenMintB: new PublicKey(data.slice(80, 112)),
-                tokenBWanted: new BN(data.slice(112, 120), 'le'),
-                bump: data[120]
-              };
-            } catch (decodeError) {
-              console.error("Decoding error for account:", account.pubkey.toString(), decodeError);
-              return null;
-            }
-          }).filter(offer => offer !== null);
-    
-          console.log("Fetched Offers:", fetchedOffers);
-          setOffers(fetchedOffers);
-        } catch (err) {
-          console.error("Error fetching offers:", err);
-        }
-      };
-    
-      fetchOffers();
-    }, [connection, programId]);
-   
     const handleSwap = async () => {
       if (!publicKey) {
         console.error("Wallet not connected");
@@ -273,7 +231,8 @@ export default function SwapInterface() {
               Swap Tokens
             </Button>
           </Card>
-  
+           {/* Available Offers */}
+           <AvailableOffers/>
           <p className="text-gray-400 text-center mt-8 max-w-md">
             The largest onchain marketplace. Buy and sell crypto on Ethereum and 11+ other chains.
           </p>
