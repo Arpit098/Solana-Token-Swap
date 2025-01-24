@@ -2,7 +2,7 @@ import { IdlAccounts, Program } from "@coral-xyz/anchor";
 import { IDL, Dex } from "./idl";
 import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
 
-export const programId = new PublicKey("F1r79aupgZuTSQ8WNqyJA2LrLhqgF9FNUEgZLcXyP9NE"); 
+export const programId = new PublicKey("49iJz8j9wiM2PhZyDEcMJps4kDD1VeqQNhwCikS4S4J3"); 
 
 const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
 

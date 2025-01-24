@@ -74,175 +74,107 @@ export default function AvailableOffers() {
 
   const HandleAcceptOffer = async (offer) => {
     try {
-      // Wallet and Connection Validation
-      if (!publicKey) {
-        console.error("Wallet not connected");
-        alert("Please connect your wallet first");
-        return;
-      }
-  
-      if (!sendTransaction) {
-        console.error("Wallet adapter not initialized");
-        alert("Wallet adapter is not ready");
-        return;
-      }
-  
-      // Detailed Logging of Offer Object
-      console.log("Full Offer Object:", JSON.stringify(offer, null, 2));
-  
-      // Derive maker and mint PublicKeys
-      const maker = new PublicKey(offer.maker);
-      const tokenMintA = new PublicKey(offer.tokenMintA);
-      const tokenMintB = new PublicKey(offer.tokenMintB);
-  
-      // Validate Critical Addresses
-      if (!maker || !tokenMintA || !tokenMintB) {
-        throw new Error("Invalid token or maker addresses");
-      }
-  
-      // Derive PDA for the offer with explicit logging
-      const [offerPDA, offerBump] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("offer"), 
-          maker.toBuffer(), 
-          new BN(offer.id).toArrayLike(Buffer, "le", 8)
-        ],
-        program.programId
-      );
-  
-      // Comprehensive Address Logging
-      console.log("Derivation Details:", {
-        maker: maker.toString(),
-        tokenMintA: tokenMintA.toString(),
-        tokenMintB: tokenMintB.toString(),
-        offerPDA: offerPDA.toString(),
-        offerBump: offerBump
-      });
-  
-      // Derive and Validate Token Accounts
-      const takerTokenAccountA = await getOrCreateAssociatedTokenAccount(
-        connection,
-        publicKey,
-        tokenMintA,
-        publicKey
-      );
-  
-      const takerTokenAccountB = await getOrCreateAssociatedTokenAccount(
-        connection,
-        publicKey,
-        tokenMintB,
-        publicKey
-      );
-  
-      // Derive Maker's Token Account for Token B
-      const makerTokenAccountB = await getAssociatedTokenAddress(tokenMintB, maker);
-  
-      // Derive Vault Address
-      const vault = await anchor.utils.token.associatedAddress({
-        mint: tokenMintA,
-        owner: offerPDA,
-      });
-  
-      // Detailed Account Logging
-      console.log("Account Addresses:", {
-        takerTokenAccountA: takerTokenAccountA.address.toString(),
-        takerTokenAccountB: takerTokenAccountB.address.toString(),
-        makerTokenAccountB: makerTokenAccountB.toString(),
-        vault: vault.toString()
-      });
-  
-      // Prepare Transaction with Enhanced Error Handling
-      const transaction = await program.methods
-        .takeOffer()
-        .accounts({
-          taker: publicKey,
-          maker,
+        // Validate wallet connection
+        if (!publicKey || !connection) {
+            throw new Error("Wallet not connected or no active connection");
+        }
+
+        // Derive PDAs and accounts
+        const maker = new PublicKey(offer.maker);
+        const tokenMintA = new PublicKey(offer.tokenMintA);
+        const tokenMintB = new PublicKey(offer.tokenMintB);
+
+        const [offerPDA] = PublicKey.findProgramAddressSync(
+            [
+                Buffer.from("offer"),
+                maker.toBuffer(),
+                new BN(offer.id).toArrayLike(Buffer, "le", 8)
+            ],
+            program.programId
+        );
+
+        const takerTokenAccountA = await getOrCreateAssociatedTokenAccount(
+          connection,
+          publicKey,
           tokenMintA,
-          tokenMintB,
-          takerTokenAccountA: takerTokenAccountA.address,
-          takerTokenAccountB: takerTokenAccountB.address,
-          makerTokenAccountB,
-          offer: offerPDA,
-          vault,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        })
-        .transaction();
-  
-      // Transaction Debugging
-      console.log("Transaction Preparation Details:", {
-        instructions: transaction.instructions.length,
-        instructionDetails: transaction.instructions.map(instr => ({
-          programId: instr.programId.toString(),
-          keys: instr.keys.map(key => key.pubkey.toString())
-        }))
-      });
-  
-      // Set Transaction Parameters
-      transaction.feePayer = publicKey;
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-  
-      // Enhanced Transaction Sending
-      try {
-        const signature = await sendTransaction(transaction, connection);
-        console.log("Transaction Signature:", signature);
-  
-        // Confirm Transaction
-        const confirmation = await connection.confirmTransaction({
-          signature,
-          blockhash,
-          lastValidBlockHeight
-        });
-  
-        if (confirmation.value.err) {
-          throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-        }
-  
-        alert("Swap successful!");
-  
-      } catch (sendError) {
-        // Fallback Manual Transaction Signing
-        console.error("Standard Send Failed. Attempting manual signing:", sendError);
-        
-        try {
-          const signedTransaction = await signTransaction(transaction);
-          const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-          
-          const confirmation = await connection.confirmTransaction({
-            signature,
-            blockhash,
-            lastValidBlockHeight
-          });
-  
-          if (confirmation.value.err) {
-            throw new Error(`Manual transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          publicKey,
+          false,
+          'confirmed',
+          { 
+            skipPreflight: false, 
+            preflightCommitment: 'confirmed' 
           }
-  
-          alert("Swap successful with manual signing!");
-        } catch (manualSignError) {
-          console.error("Manual Transaction Signing Failed:", manualSignError);
-          alert(`Swap failed: ${manualSignError.message}`);
+        );
+
+        const takerTokenAccountB = await getOrCreateAssociatedTokenAccount(
+          connection,
+          publicKey,
+          tokenMintB,
+          publicKey,
+          false,
+          'confirmed',
+          { 
+            skipPreflight: false, 
+            preflightCommitment: 'confirmed' 
+          }
+        );
+
+        const makerTokenAccountB = await getAssociatedTokenAddress(
+          tokenMintB, 
+          maker, 
+          false, 
+          TOKEN_PROGRAM_ID,
+          ASSOCIATED_TOKEN_PROGRAM_ID
+        );
+
+        const vault = await anchor.utils.token.associatedAddress({
+            mint: tokenMintA,
+            owner: offerPDA
+        });
+
+        // Create and send transaction
+        const transaction = await program.methods
+            .takeOffer()
+            .accounts({
+                taker: publicKey,
+                maker,
+                tokenMintA,
+                tokenMintB,
+                takerTokenAccountA: takerTokenAccountA.address,
+                takerTokenAccountB: takerTokenAccountB.address,
+                makerTokenAccountB,
+                offer: offerPDA,
+                vault,
+                systemProgram: SystemProgram.programId,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID
+            })
+            .transaction();
+
+        transaction.feePayer = publicKey;
+        
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+       
+        transaction.recentBlockhash = blockhash;
+
+        const signature = await sendTransaction(transaction, connection);
+        console.log("Transaction:", transaction);
+
+
+        console.log("Blockhash:", blockhash, "Last Valid Block Height:", lastValidBlockHeight);
+
+        if (lastValidBlockHeight) {
+            await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight });
+        } else {
+            console.warn("Last valid block height is undefined; falling back to simpler confirmation.");
         }
-      }
-  
+        
+        alert("Swap successful!");
     } catch (error) {
-      // Comprehensive Error Logging
-      console.error("Swap Error Details:", {
-        errorName: error.name,
-        errorMessage: error.message,
-        errorStack: error.stack,
-        errorCode: error.code
-      });
-  
-      let errorMessage = "An unexpected error occurred";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      
-      alert(`Error: ${errorMessage}`);
+        console.error("Swap Error:", error, error.message);
     }
+
+
   };
   
 

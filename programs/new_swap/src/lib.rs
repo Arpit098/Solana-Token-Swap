@@ -7,7 +7,7 @@ use anchor_spl::{
     },
 };
 
-declare_id!("F1r79aupgZuTSQ8WNqyJA2LrLhqgF9FNUEgZLcXyP9NE");
+declare_id!("49iJz8j9wiM2PhZyDEcMJps4kDD1VeqQNhwCikS4S4J3");
 
 #[program]
 pub mod dex {
@@ -43,7 +43,12 @@ pub mod dex {
     }
 
     pub fn take_offer(ctx: Context<TakeOffer>) -> Result<()> {
-        //transfer tokens to the maker
+        // Validate the amount of token B being offered matches the offer
+        if ctx.accounts.taker_token_account_b.amount < ctx.accounts.offer.token_b_wanted {
+            return Err(ProgramError::InsufficientFunds.into());
+        }
+    
+        // Transfer tokens from taker to maker (token B)
         transfer_tokens(
             &ctx.accounts.taker_token_account_b,
             &ctx.accounts.maker_token_account_b,
@@ -52,16 +57,17 @@ pub mod dex {
             &ctx.accounts.taker,
             &ctx.accounts.token_program,
         )?;
-
-        //withdraw and close part
+    
+        // Prepare signer seeds for the offer account
         let seeds = &[
             &ctx.accounts.maker.to_account_info().key.as_ref(),
             &ctx.accounts.offer.id.to_le_bytes()[..],
             &[ctx.accounts.offer.bump],
         ];
         let signer_seeds = [&seeds[..]];
-
-        let accounts = TransferChecked {
+    
+        // Transfer tokens from vault to taker (token A)
+        let transfer_accounts = TransferChecked {
             from: ctx.accounts.vault.to_account_info(),
             to: ctx.accounts.taker_token_account_a.to_account_info(),
             mint: ctx.accounts.token_mint_a.to_account_info(),
@@ -69,29 +75,30 @@ pub mod dex {
         };
         let cpi_context = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
-            accounts,
+            transfer_accounts,
             &signer_seeds,
         );
-
+    
         transfer_checked(
             cpi_context,
             ctx.accounts.vault.amount,
             ctx.accounts.token_mint_a.decimals,
         )?;
-
-        let accounts = CloseAccount {
+    
+        // Close the vault and offer accounts
+        let close_accounts = CloseAccount {
             account: ctx.accounts.vault.to_account_info(),
             destination: ctx.accounts.taker.to_account_info(),
             authority: ctx.accounts.offer.to_account_info(),
         };
-
-        let cpi_context = CpiContext::new_with_signer(
+    
+        let close_context = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
-            accounts,
+            close_accounts,
             &signer_seeds,
         );
-
-        close_account(cpi_context)
+    
+        close_account(close_context)
     }
 
    

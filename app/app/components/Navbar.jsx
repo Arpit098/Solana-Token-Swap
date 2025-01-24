@@ -10,7 +10,6 @@ import Link from 'next/link';
 const Navbar = () => {
     const { connection } = useConnection();
     const { publicKey } = useWallet();
-    console.log(publicKey?.toString());
 
     return (
         <nav className="fixed top-0 w-full bg-gradient-to-r from-gray-900 via-black to-gray-800 text-white p-4 shadow-lg z-50">
